@@ -65,6 +65,26 @@ async function run() {
       }
     });
 
+    app.post("/users/google", async (req, res) => {
+      try {
+        const { email } = req.body;
+        const existingUser = await usersCollection.findOne({ email });
+        if (existingUser) {
+          return res.send({
+            message: "User already exists",
+            user: existingUser,
+          });
+        }
+        const result = await usersCollection.insertOne(req.body);
+        res
+          .status(201)
+          .send({ message: "Google user created", user: req.body });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Failed to add Google user" });
+      }
+    });
+
     app.post("/login", async (req, res) => {
       try {
         const { email, password } = req.body;
@@ -422,9 +442,9 @@ async function run() {
     app.get("/favorites", async (req, res) => {
       try {
         const { userId } = req.query;
-        const favorites = await favoritesCollection.find({ userId }).toArray();
+        const query = userId ? { userId } : {}; // userId na thakle shob fetch
+        const favorites = await favoritesCollection.find(query).toArray();
 
-        // populate lesson info
         const favoritesWithLessons = await Promise.all(
           favorites.map(async (fav) => {
             const lesson = await lessonsCollection.findOne({
@@ -491,12 +511,10 @@ async function run() {
           { $set: { reportsCount: 0 } }
         );
 
-        res
-          .status(200)
-          .send({
-            message: "Reports ignored",
-            deletedCount: result.deletedCount,
-          });
+        res.status(200).send({
+          message: "Reports ignored",
+          deletedCount: result.deletedCount,
+        });
       } catch (err) {
         console.error(err);
         res.status(500).send({ message: "Failed to ignore reports" });
