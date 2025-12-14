@@ -477,13 +477,70 @@ async function run() {
       }
     });
 
-    app.get("/lessonsReports", async (req, res) => {
+    // Ignore reports for a lesson
+    app.patch("/lessonsReports/:lessonId/ignore", async (req, res) => {
       try {
-        const reports = await lessonsReportsCollection.find({}).toArray();
-        res.status(200).send(reports);
+        const { lessonId } = req.params;
+
+        // Remove all reports for this lesson
+        const result = await lessonsReportsCollection.deleteMany({ lessonId });
+
+        // Reset reportsCount in lessons collection
+        await lessonsCollection.updateOne(
+          { _id: new ObjectId(lessonId) },
+          { $set: { reportsCount: 0 } }
+        );
+
+        res
+          .status(200)
+          .send({
+            message: "Reports ignored",
+            deletedCount: result.deletedCount,
+          });
       } catch (err) {
         console.error(err);
-        res.status(500).send({ message: "Failed to fetch reports" });
+        res.status(500).send({ message: "Failed to ignore reports" });
+      }
+    });
+
+    // Fetch reported lessons with aggregated reports
+    app.get("/reported-lessons", async (req, res) => {
+      try {
+        // Aggregate reports by lessonId
+        const reports = await lessonsReportsCollection
+          .aggregate([
+            {
+              $group: {
+                _id: "$lessonId",
+                count: { $sum: 1 },
+                reasons: {
+                  $push: { userEmail: "$userEmail", reason: "$reason" },
+                },
+              },
+            },
+          ])
+          .toArray();
+
+        // Populate lesson info
+        const lessonsWithReports = await Promise.all(
+          reports.map(async (r) => {
+            const lesson = await lessonsCollection.findOne({
+              _id: new ObjectId(r._id),
+            });
+            if (!lesson) return null; // skip deleted lessons
+            return {
+              lessonId: r._id,
+              lessonTitle: lesson.title,
+              count: r.count,
+              reasons: r.reasons,
+            };
+          })
+        );
+
+        res.status(200).send(lessonsWithReports.filter(Boolean));
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Failed to fetch reported lessons" });
       }
     });
 
