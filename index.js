@@ -29,7 +29,6 @@ const lessonsReportsCollection = db.collection("lessonsReports");
 const favoritesCollection = db.collection("favorites");
 const commentsCollection = db.collection("comments");
 
-
 async function run() {
   try {
     await client.connect();
@@ -83,7 +82,6 @@ async function run() {
         res.status(500).send({ message: "Login failed" });
       }
     });
-    
 
     app.get("/users/:id", async (req, res) => {
       try {
@@ -198,6 +196,21 @@ async function run() {
       }
     });
 
+    app.delete("/lessons/:id", async (req, res) => {
+      try {
+        const result = await lessonsCollection.deleteOne({
+          _id: new ObjectId(req.params.id),
+        });
+        if (result.deletedCount === 0) {
+          return res.status(404).send({ message: "Lesson not found" });
+        }
+        res.send({ success: true, message: "Lesson deleted" });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ success: false, message: "Delete failed" });
+      }
+    });
+
     app.patch("/lessons/:id/favorite", async (req, res) => {
       try {
         const result = await lessonsCollection.findOneAndUpdate(
@@ -289,6 +302,73 @@ async function run() {
       } catch (err) {
         console.error(err);
         res.status(500).send({ message: "Failed to toggle access" });
+      }
+    });
+
+    // GET featured lessons
+    app.get("/featured-lessons", async (req, res) => {
+      try {
+        let featuredLessons = await lessonsCollection
+          .find({ featured: true })
+          .toArray();
+
+        // If no featured lessons exist, insert defaults
+        if (featuredLessons.length === 0) {
+          const defaultFeaturedLessons = [
+            {
+              title: "Boosting Creativity Through Daily Practices",
+              description:
+                "Creativity isn’t a talent reserved for a few—it’s a skill you can train...",
+              category: "Creativity",
+              emotionalTone: "Encouraging",
+              userImage:
+                "https://images.unsplash.com/photo-1740560052722-12abf8819817?q=80&w=1170&auto=format&fit=crop",
+              accessLevel: "Free",
+              creatorName: "Sophia Rivera",
+              creatorPhotoURL:
+                "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=800",
+              featured: true,
+            },
+            {
+              title: "Breaking Negative Thought Patterns",
+              description: "Your thoughts shape your actions and identity...",
+              category: "Mental Wellness",
+              emotionalTone: "Healing",
+              userImage:
+                "https://images.unsplash.com/photo-1579756423483-7ad1f01ece5c?q=80&w=1170&auto=format&fit=crop",
+              accessLevel: "Free",
+              creatorName: "Liam Carter",
+              creatorPhotoURL:
+                "https://images.unsplash.com/photo-1517849845537-4d257902454a?w=800",
+              featured: true,
+            },
+            {
+              title: "Developing Strong Communication Skills",
+              description: "Effective communication opens doors...",
+              category: "Skills Development",
+              emotionalTone: "Practical",
+              userImage:
+                "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=1170&auto=format&fit=crop",
+              accessLevel: "Premium",
+              creatorName: "Emma Blake",
+              creatorPhotoURL:
+                "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=800",
+              featured: true,
+            },
+          ];
+
+          const result = await lessonsCollection.insertMany(
+            defaultFeaturedLessons
+          );
+          featuredLessons = await lessonsCollection
+            .find({ _id: { $in: result.insertedIds } })
+            .toArray();
+        }
+
+        res.status(200).send(featuredLessons);
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Failed to fetch featured lessons" });
       }
     });
 
