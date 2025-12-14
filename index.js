@@ -29,6 +29,7 @@ const lessonsReportsCollection = db.collection("lessonsReports");
 const favoritesCollection = db.collection("favorites");
 const commentsCollection = db.collection("comments");
 
+
 async function run() {
   try {
     await client.connect();
