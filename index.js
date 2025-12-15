@@ -1,5 +1,4 @@
 require("dotenv").config();
-const bcrypt = require("bcrypt");
 const express = require("express");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
@@ -11,7 +10,6 @@ const port = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ limit: "15mb", extended: true }));
-
 
 const serviceAccount = require("./SDK.json");
 
@@ -57,14 +55,17 @@ const commentsCollection = db.collection("comments");
 
 async function run() {
   try {
-    await client.connect();
-    console.log("✅ MongoDB connected");
+    // await client.connect();
+    // console.log("✅ MongoDB connected");
 
     // ==================== USERS ====================
+
+    const bcrypt = require("bcrypt");
 
     app.post("/users", async (req, res) => {
       try {
         const { password, ...data } = req.body;
+
         if (!data.email)
           return res.status(400).send({ message: "Email required" });
 
@@ -74,14 +75,17 @@ async function run() {
         if (existingUser)
           return res.send({ message: "User already exists", inserted: false });
 
-        const hashedPassword = password
-          ? await bcrypt.hash(password, await bcrypt.genSalt(10))
-          : undefined;
+        let userToInsert = { ...data };
 
-        const result = await usersCollection.insertOne({
-          ...data,
-          password: hashedPassword,
-        });
+        // Only hash password if it exists (normal registration)
+        if (password) {
+          const salt = await bcrypt.genSalt(10);
+          const hashedPassword = await bcrypt.hash(password, salt);
+          userToInsert.password = hashedPassword;
+        }
+
+        const result = await usersCollection.insertOne(userToInsert);
+
         res
           .status(201)
           .send({ message: "User created", inserted: true, result });
@@ -114,12 +118,21 @@ async function run() {
     app.post("/login", async (req, res) => {
       try {
         const { email, password } = req.body;
+        if (!email || !password)
+          return res
+            .status(400)
+            .send({ message: "Email and password required" });
+
         const user = await usersCollection.findOne({ email });
         if (!user) return res.status(404).send({ message: "User not found" });
 
-        const match = password
-          ? await bcrypt.compare(password, user.password)
-          : true;
+        // If user registered via Google, prevent password login
+        if (!user.password)
+          return res
+            .status(400)
+            .send({ message: "This account uses Google login" });
+
+        const match = await bcrypt.compare(password, user.password);
         if (!match) return res.status(401).send({ message: "Wrong password" });
 
         res.send({ message: "Login successful", user });
@@ -142,7 +155,7 @@ async function run() {
       }
     });
 
-    app.get("/users", async (req, res) => {
+    app.get("/users", verifyToken, async (req, res) => {
       try {
         const { email } = req.query;
         if (email) {
@@ -213,7 +226,7 @@ async function run() {
       }
     });
 
-    app.get("/lessons/:id",  async (req, res) => {
+    app.get("/lessons/:id", async (req, res) => {
       try {
         const lesson = await lessonsCollection.findOne({
           _id: new ObjectId(req.params.id),
