@@ -2,10 +2,10 @@
   "name": "dll_server",
   "version": "1.0.0",
   "description": "Digital Life Lessons API",
-  "main": "api/index.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node api/index.js",
-    "dev": "nodemon api/index.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

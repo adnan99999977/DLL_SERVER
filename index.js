@@ -4,13 +4,39 @@ const express = require("express");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const stripe = require("stripe")(process.env.PAYMENT_SECRET);
+const admin = require("firebase-admin");
 
 const app = express();
-const port = 5000;
-
+const port = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ limit: "15mb", extended: true }));
+
+
+const serviceAccount = require("./SDK.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
+/* ================= VERIFY TOKEN ================= */
+const verifyToken = async (req, res, next) => {
+  const token = req.headers.authorization;
+
+  if (!token) {
+    return res.status(401).send({ message: "unauthorized access" });
+  }
+
+  try {
+    const idToken = token.split(" ")[1];
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    console.log("decoded in the token", decoded);
+    req.decoded_email = decoded.email;
+    next();
+  } catch (err) {
+    return res.status(401).send({ message: "unauthorized access" });
+  }
+};
 
 const uri = `mongodb+srv://${process.env.ADMIN_NAME}:${process.env.ADMIN_PASS}@cluster0.egeojdc.mongodb.net/?appName=Cluster0`;
 
@@ -103,7 +129,7 @@ async function run() {
       }
     });
 
-    app.get("/users/:id", async (req, res) => {
+    app.get("/users/:id", verifyToken, async (req, res) => {
       try {
         const user = await usersCollection.findOne({
           _id: new ObjectId(req.params.id),
@@ -132,7 +158,7 @@ async function run() {
       }
     });
 
-    app.patch("/users/:id", async (req, res) => {
+    app.patch("/users/:id", verifyToken, async (req, res) => {
       try {
         const result = await usersCollection.updateOne(
           { _id: new ObjectId(req.params.id) },
@@ -150,7 +176,7 @@ async function run() {
       }
     });
 
-    app.delete("/users/:id", async (req, res) => {
+    app.delete("/users/:id", verifyToken, async (req, res) => {
       try {
         const result = await usersCollection.deleteOne({
           _id: new ObjectId(req.params.id),
@@ -165,7 +191,7 @@ async function run() {
     });
 
     // ==================== LESSONS ====================
-    app.post("/lessons", async (req, res) => {
+    app.post("/lessons", verifyToken, async (req, res) => {
       try {
         const result = await lessonsCollection.insertOne(req.body);
         res.status(201).send(result);
@@ -187,7 +213,7 @@ async function run() {
       }
     });
 
-    app.get("/lessons/:id", async (req, res) => {
+    app.get("/lessons/:id",  async (req, res) => {
       try {
         const lesson = await lessonsCollection.findOne({
           _id: new ObjectId(req.params.id),
@@ -199,7 +225,7 @@ async function run() {
       }
     });
 
-    app.patch("/lessons/:id", async (req, res) => {
+    app.patch("/lessons/:id", verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
         await lessonsCollection.updateOne(
@@ -216,7 +242,7 @@ async function run() {
       }
     });
 
-    app.delete("/lessons/:id", async (req, res) => {
+    app.delete("/lessons/:id", verifyToken, async (req, res) => {
       try {
         const result = await lessonsCollection.deleteOne({
           _id: new ObjectId(req.params.id),
@@ -273,33 +299,37 @@ async function run() {
       }
     });
 
-    app.patch("/lessons/:id/toggle-visibility", async (req, res) => {
-      try {
-        const lesson = await lessonsCollection.findOne({
-          _id: new ObjectId(req.params.id),
-        });
-        if (!lesson)
-          return res.status(404).send({ message: "Lesson not found" });
+    app.patch(
+      "/lessons/:id/toggle-visibility",
+      verifyToken,
+      async (req, res) => {
+        try {
+          const lesson = await lessonsCollection.findOne({
+            _id: new ObjectId(req.params.id),
+          });
+          if (!lesson)
+            return res.status(404).send({ message: "Lesson not found" });
 
-        const newVisibility =
-          lesson.visibility === "Public" ? "Private" : "Public";
+          const newVisibility =
+            lesson.visibility === "Public" ? "Private" : "Public";
 
-        const result = await lessonsCollection.updateOne(
-          { _id: new ObjectId(req.params.id) },
-          { $set: { visibility: newVisibility } }
-        );
+          const result = await lessonsCollection.updateOne(
+            { _id: new ObjectId(req.params.id) },
+            { $set: { visibility: newVisibility } }
+          );
 
-        res.send({
-          modifiedCount: result.modifiedCount,
-          visibility: newVisibility,
-        });
-      } catch (err) {
-        console.error(err);
-        res.status(500).send({ message: "Failed to toggle visibility" });
+          res.send({
+            modifiedCount: result.modifiedCount,
+            visibility: newVisibility,
+          });
+        } catch (err) {
+          console.error(err);
+          res.status(500).send({ message: "Failed to toggle visibility" });
+        }
       }
-    });
+    );
 
-    app.patch("/lessons/:id/toggle-access", async (req, res) => {
+    app.patch("/lessons/:id/toggle-access", verifyToken, async (req, res) => {
       try {
         const lesson = await lessonsCollection.findOne({
           _id: new ObjectId(req.params.id),
@@ -498,28 +528,34 @@ async function run() {
     });
 
     // Ignore reports for a lesson
-    app.patch("/lessonsReports/:lessonId/ignore", async (req, res) => {
-      try {
-        const { lessonId } = req.params;
+    app.patch(
+      "/lessonsReports/:lessonId/ignore",
+      verifyToken,
+      async (req, res) => {
+        try {
+          const { lessonId } = req.params;
 
-        // Remove all reports for this lesson
-        const result = await lessonsReportsCollection.deleteMany({ lessonId });
+          // Remove all reports for this lesson
+          const result = await lessonsReportsCollection.deleteMany({
+            lessonId,
+          });
 
-        // Reset reportsCount in lessons collection
-        await lessonsCollection.updateOne(
-          { _id: new ObjectId(lessonId) },
-          { $set: { reportsCount: 0 } }
-        );
+          // Reset reportsCount in lessons collection
+          await lessonsCollection.updateOne(
+            { _id: new ObjectId(lessonId) },
+            { $set: { reportsCount: 0 } }
+          );
 
-        res.status(200).send({
-          message: "Reports ignored",
-          deletedCount: result.deletedCount,
-        });
-      } catch (err) {
-        console.error(err);
-        res.status(500).send({ message: "Failed to ignore reports" });
+          res.status(200).send({
+            message: "Reports ignored",
+            deletedCount: result.deletedCount,
+          });
+        } catch (err) {
+          console.error(err);
+          res.status(500).send({ message: "Failed to ignore reports" });
+        }
       }
-    });
+    );
 
     // Fetch reported lessons with aggregated reports
     app.get("/reported-lessons", async (req, res) => {
@@ -614,4 +650,10 @@ async function run() {
 
 run();
 
-app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
+app.get("/", (req, res) => {
+  res.send("dll server is on buddy!");
+});
+
+app.listen(port, () => {
+  console.log(` app listening on port ${port}`);
+});
